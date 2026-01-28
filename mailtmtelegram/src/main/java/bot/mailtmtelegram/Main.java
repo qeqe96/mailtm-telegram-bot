@@ -2,7 +2,6 @@ package bot.mailtmtelegram;
 import okhttp3.*;
 import org.json.*;
 import com.sun.net.httpserver.HttpServer;
-import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.*;
@@ -66,9 +65,9 @@ public class Main {
                 int displayNum = currentWebIndex + 1;
                 response = h + "<div class='card'>" +
                         "<div class='counter'>" + displayNum + " / " + BATCH_SIZE + "</div>" + // SAYAÇ BURADA
-                        "<button class='btn-site' onclick='cs()'>1. SİTEYİ KOPYALA</button><hr>" +
+                        "<button class='btn-site' onclick='cs()'>SİTEYİ KOPYALA</button><hr>" +
                         "<input type='text' id='m' value='" + mails.get(currentWebIndex) + "' readonly>" +
-                        "<button class='btn-mail' id='bm' onclick='c()' disabled>2. KOPYALA & SONRAKİ</button></div>";
+                        "<button class='btn-mail' id='bm' onclick='c()' disabled>KOPYALA</button></div>";
             }
             response += "<script>function cs(){navigator.clipboard.writeText('" + TARGET_URL + "').then(()=>{document.getElementById('bm').disabled=false;document.getElementById('bm').style.opacity='1';});}" +
                         "function c(){var x=document.getElementById('m');navigator.clipboard.writeText(x.value).then(()=>{window.location.href='/next';});}</script></body></html>";
