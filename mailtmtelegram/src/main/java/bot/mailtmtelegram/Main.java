@@ -13,7 +13,7 @@ public class Main {
 
     static final String API = "https://api.mail.tm";
     static final String PASSWORD = "123456";
-    static final int BATCH_SIZE = 10;
+    static final int BATCH_SIZE = 20;
 
     // sabit + nadir + göze batmayan
     static final String PREFIX = "xqhlvrna";
