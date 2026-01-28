@@ -90,10 +90,10 @@ public class Main {
                 
                 response = htmlHead + "<div class='card'>" +
                            "<div class='counter'>Sıradaki: " + current + " / " + total + "</div>" +
-                           "<button class='btn-site' onclick='copySite()'>1. SİTEYİ KOPYALA</button>" +
+                           "<button class='btn-site' onclick='copySite()'>SİTEYİ KOPYALA</button>" +
                            "<hr>" +
                            "<input type='text' id='m' value='" + currentMail + "' readonly>" +
-                           "<button class='btn-mail' id='btnMail' onclick='c()' disabled>2. KOPYALA & SONRAKİ</button>" +
+                           "<button class='btn-mail' id='btnMail' onclick='c()' disabled>KOPYALA</button>" +
                            "</div>";
             }
 
