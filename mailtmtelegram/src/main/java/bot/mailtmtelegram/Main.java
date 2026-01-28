@@ -8,8 +8,8 @@ import java.util.concurrent.TimeUnit;
 public class Main {
 
     // ================== CONFIG ==================
-    static final String BOT_TOKEN = "TELEGRAM_BOT_TOKEN";
-    static final long CHAT_ID = 123456789L;
+	static final String BOT_TOKEN = System.getenv("BOT_TOKEN");
+	static final long CHAT_ID = Long.parseLong(System.getenv("CHAT_ID"));
 
     static final String API = "https://api.mail.tm";
     static final String PASSWORD = "123456";
