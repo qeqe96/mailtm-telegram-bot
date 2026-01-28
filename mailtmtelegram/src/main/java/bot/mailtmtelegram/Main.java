@@ -138,13 +138,15 @@ public class Main {
                         JSONObject m = messages.getJSONObject(i);
                         String id = m.getString("id");
 
+                     // ================== KISA BİLDİRİM FORMATI ==================
                         if (seenIds.add(id)) {
                             String intro = m.optString("intro", "");
                             String[] lines = intro.split("\n");
-                            // 2. satırı almayı dene, yoksa tam intro gönder
+                            // Sadece 2. satırı (kod) al, yoksa ilk satırı al
                             String code = (lines.length >= 2) ? lines[1].trim() : lines[0].trim();
                             
-                            sendTG("🔑 *YENİ KOD*\n📧: `" + email + "`\n🔢: `" + code + "`");
+                            // Bildirimde direk gözükmesi için en sade hali:
+                            sendTG("📩 `" + code + "`\n📧 " + email);
                         }
                     }
                 }
