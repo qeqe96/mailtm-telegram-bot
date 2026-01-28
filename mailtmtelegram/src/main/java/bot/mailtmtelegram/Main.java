@@ -8,15 +8,18 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class Main {
-    // ================== CONFIG ==================
+    // ================== AYARLAR ==================
+    // Railway panelinden Variables kısmına eklemeyi unutma!
     static final String BOT_TOKEN = System.getenv("BOT_TOKEN");
-    static final long CHAT_ID = Long.parseLong(System.getenv("CHAT_ID"));
+    static final long CHAT_ID = Long.parseLong(System.getenv("CHAT_ID") != null ? System.getenv("CHAT_ID") : "0");
+    
     static final String API = "https://api.mail.tm";
     static final String PASSWORD = "123456";
     static final int BATCH_SIZE = 10;
     static final String PREFIX = "xqhlvrna";
+    static final String TARGET_URL = "https://dynamic-starburst-9a0ca2.netlify.app/";
 
-    // ================== STATE ==================
+    // ================== DURUM YÖNETİMİ ==================
     static final Map<Integer, String> activeMails = new ConcurrentSkipListMap<>();
     static final Map<String, String> tokenMap = new ConcurrentHashMap<>();
     static final Set<String> seenIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
@@ -29,15 +32,19 @@ public class Main {
 
     static final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
+            .connectionPool(new ConnectionPool(15, 5, TimeUnit.MINUTES))
             .build();
 
     public static void main(String[] args) throws Exception {
+        if (BOT_TOKEN == null) {
+            System.out.println("❌ HATA: BOT_TOKEN bulunamadı!");
+            return;
+        }
+
         domain = fetchDomain();
-        
-        // Web Sunucusunu Başlat
         startWebServer();
         
-        sendTG("🚀 Bot ve Web Panel Hazır!\nDomain: " + domain);
+        sendTG("🚀 *Bot ve Web Panel Yayında!*\n🌐 Domain: " + domain + "\nSıralı ve kilitli mod aktif.");
 
         while (true) {
             try {
@@ -50,9 +57,8 @@ public class Main {
         }
     }
 
-    // ================== WEB PANEL (GÖMÜLÜ) ==================
+    // ================== KİLİTLİ WEB PANEL ==================
     static void startWebServer() throws Exception {
-        // Railway/Render PORT değişkenini otomatik okur
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
         HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
 
@@ -60,22 +66,55 @@ public class Main {
             List<String> mails = new ArrayList<>(activeMails.values());
             String response;
             
+            String htmlHead = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>Mail Paneli</title>" +
+                    "<style>" +
+                    "body { background: #121212; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; margin: 0; }" +
+                    ".card { background: #1e1e1e; padding: 30px; border-radius: 15px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 350px; border: 1px solid #333; }" +
+                    ".btn-site { background: #007bff; color: white; border: none; padding: 14px; width: 100%; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; margin-bottom: 25px; transition: 0.2s; }" +
+                    ".btn-site:hover { background: #0056b3; }" +
+                    "input { background: #2c2c2c; color: #00ff88; border: 2px solid #444; padding: 15px; width: 100%; font-size: 18px; border-radius: 8px; text-align: center; margin-bottom: 15px; outline: none; box-sizing: border-box; }" +
+                    ".btn-mail { background: #00ff88; color: #121212; border: none; padding: 15px; width: 100%; font-size: 18px; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.2s; }" +
+                    ".btn-mail:disabled { background: #444; color: #888; cursor: not-allowed; opacity: 0.4; }" +
+                    "hr { border: 0; border-top: 1px solid #333; margin: 20px 0; }" +
+                    ".counter { font-size: 14px; color: #888; margin-bottom: 10px; }" +
+                    "</style></head><body>";
+
             if (mails.isEmpty() || currentWebIndex >= mails.size()) {
-                response = "<html><head><meta charset='UTF-8'></head><body style='background:#121212;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;'>" +
-                           "<h2>Sırada mail yok!</h2><p>Telegram'dan /new yazın.</p></body></html>";
+                response = htmlHead + "<div class='card'>" +
+                           "<button class='btn-site' onclick='copySite()'>1. SİTEYİ KOPYALA</button>" +
+                           "<hr><h3>Sırada mail yok!</h3><p style='color:#888'>Telegram'dan /new yazın.</p></div>";
             } else {
                 String currentMail = mails.get(currentWebIndex);
-                response = "<html><head><meta charset='UTF-8'><title>Mail Paneli</title></head>" +
-                           "<body style='background:#121212;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;'>" +
-                           "<div style='background:#1e1e1e;padding:30px;border-radius:15px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);'>" +
-                           "<input type='text' id='m' value='" + currentMail + "' readonly style='background:#2c2c2c;color:#00ff88;border:2px solid #444;padding:15px;width:320px;font-size:20px;border-radius:8px;text-align:center;margin-bottom:20px;outline:none;'>" +
-                           "<br><button onclick='c()' style='background:#00ff88;color:#121212;border:none;padding:15px 40px;font-size:18px;font-weight:bold;border-radius:8px;cursor:pointer;'>KOPYALA & SONRAKİ</button>" +
-                           "</div><script>" +
-                           "function c(){var x=document.getElementById('m');x.select();document.execCommand('copy');window.location.href='/next';}" +
-                           "</script></body></html>";
+                int total = mails.size();
+                int current = currentWebIndex + 1;
+                
+                response = htmlHead + "<div class='card'>" +
+                           "<div class='counter'>Sıradaki: " + current + " / " + total + "</div>" +
+                           "<button class='btn-site' onclick='copySite()'>1. SİTEYİ KOPYALA</button>" +
+                           "<hr>" +
+                           "<input type='text' id='m' value='" + currentMail + "' readonly>" +
+                           "<button class='btn-mail' id='btnMail' onclick='c()' disabled>2. KOPYALA & SONRAKİ</button>" +
+                           "</div>";
             }
-            exchange.sendResponseHeaders(200, response.getBytes().length);
-            exchange.getResponseBody().write(response.getBytes());
+
+            response += "<script>" +
+                       "function copySite() {" +
+                       "  navigator.clipboard.writeText('" + TARGET_URL + "').then(() => {" +
+                       "    document.getElementById('btnMail').disabled = false;" +
+                       "    document.getElementById('btnMail').style.background = '#00ff88';" +
+                       "  });" +
+                       "}" +
+                       "function c() {" +
+                       "  var x = document.getElementById('m');" +
+                       "  navigator.clipboard.writeText(x.value).then(() => {" +
+                       "    window.location.href='/next';" +
+                       "  });" +
+                       "}" +
+                       "</script></body></html>";
+
+            byte[] bytes = response.getBytes("UTF-8");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
             exchange.close();
         });
 
@@ -89,7 +128,7 @@ public class Main {
         server.start();
     }
 
-    // ================== TELEGRAM & MAIL LOGIC ==================
+    // ================== TELEGRAM VE MAIL MANTIĞI ==================
     static void pollTelegram() {
         try {
             Request req = new Request.Builder()
@@ -118,12 +157,12 @@ public class Main {
     static void createBatch() {
         if (creating) return;
         creating = true;
-        currentWebIndex = 0; // Web sırasını sıfırla
+        currentWebIndex = 0;
         activeMails.clear();
         tokenMap.clear();
         seenIds.clear();
 
-        sendTG("⏳ Mailler sıralı hazırlanıyor...");
+        sendTG("⏳ *10 Mail* sıralı olarak hazırlanıyor...");
 
         int count = 0;
         int currentNum = batchStart;
@@ -137,7 +176,7 @@ public class Main {
             }
         }
         batchStart = currentNum;
-        sendTG("✅ Hazır!\nWeb Panelden kopyalamaya başlayabilirsin.");
+        sendTG("✅ *Mailler Hazır!*\nWeb panelden kopyalamaya başlayabilirsin.");
         creating = false;
     }
 
@@ -152,25 +191,29 @@ public class Main {
     }
 
     static void checkEmails() {
-        for (String email : activeMails.values()) {
+        activeMails.values().parallelStream().forEach(email -> {
             try {
                 String token = getToken(email);
-                if (token == null) continue;
+                if (token == null) return;
                 Request req = new Request.Builder().url(API + "/messages").addHeader("Authorization", "Bearer " + token).build();
                 try (Response res = client.newCall(req).execute()) {
                     JSONArray msgs = new JSONObject(res.body().string()).getJSONArray("hydra:member");
                     for (int i = 0; i < msgs.length(); i++) {
                         JSONObject m = msgs.getJSONObject(i);
+                     // ================== SADECE KOD BİLDİRİMİ ==================
                         if (seenIds.add(m.getString("id"))) {
                             String intro = m.optString("intro", "");
                             String[] lines = intro.split("\n");
+                            // 2. satırı al, yoksa 1. satırı al
                             String code = (lines.length >= 2) ? lines[1].trim() : lines[0].trim();
-                            sendTG("📩 `" + code + "`\n📧 " + email);
+                            
+                            // Bildirimde SADECE kod görünür (Tıklayınca kopyalanır)
+                            sendTG("`" + code + "`");
                         }
                     }
                 }
             } catch (Exception ignored) {}
-        }
+        });
     }
 
     static String getToken(String email) {
@@ -198,7 +241,8 @@ public class Main {
     }
 
     static String listMails() {
-        StringBuilder sb = new StringBuilder("📋 *LİSTE*\n");
+        if (activeMails.isEmpty()) return "📭 Liste boş.";
+        StringBuilder sb = new StringBuilder("📋 *AKTİF LİSTE*\n");
         activeMails.values().forEach(m -> sb.append("`").append(m).append("`\n"));
         return sb.toString();
     }
