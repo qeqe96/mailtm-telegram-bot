@@ -73,6 +73,7 @@ public class Main {
     }
 
     // ================== SIRALI MAIL OLUSTURMA ==================
+ // ================== SIRALI VE TAM MAIL OLUSTURMA ==================
     static void createBatch() {
         if (creating) return;
         creating = true;
@@ -81,19 +82,27 @@ public class Main {
         tokenMap.clear();
         seenIds.clear();
 
-        int start = batchStart;
-        sendTG("⏳ " + start + " noktasından başlanıyor...");
+        sendTG("⏳ " + BATCH_SIZE + " mail sıralı şekilde hazırlanıyor...");
 
-        for (int i = 0; i < BATCH_SIZE; i++) {
-            int currentNum = batchStart + i;
+        int createdCount = 0;
+        int currentNum = batchStart;
+
+        // Tam 10 tane olana kadar denemeye devam eder
+        while (createdCount < BATCH_SIZE) {
             if (createAccount(currentNum)) {
                 activeMails.put(currentNum, PREFIX + currentNum + "@" + domain);
+                createdCount++;
+                currentNum++; // Başarılıysa sonrakine geç
+                
+                // API'yi yormamak için her başarılı hesapta 400ms bekle
+                try { Thread.sleep(400); } catch (InterruptedException ignored) {}
+            } else {
+                // Eğer API reddettiyse 1 saniye bekle ve aynı numarayı tekrar dene
+                try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
             }
-            // mail.tm'in banlamaması için hafif bekleme (Sıralı olmasını sağlar)
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
         }
         
-        batchStart += BATCH_SIZE;
+        batchStart = currentNum; // Bir sonraki batch için kaldığı yeri güncelle
         sendTG("✅ Mailbox'lar hazır!\n" + listMails());
         creating = false;
     }
