@@ -25,112 +25,34 @@ public class Main {
     static String domain = "";
     static long lastUpdateId = 0;
 
-    static final OkHttpClient client = new OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .build();
+    static final OkHttpClient client = new OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build();
 
     public static void main(String[] args) throws Exception {
         domain = fetchDomain();
         startWebServer();
-        sendTG("🚀 *Sistem Aktif!* \n🎲 Rastgele isimli mailler ve saf kod bildirimleri devrede.");
+        sendTG("🚀 *Sistem Hazır!* \nSayaç ve kilitli mod aktif.");
 
         while (true) {
             try {
                 pollTelegram();
-                if (!activeMails.isEmpty() && !creating) {
-                    checkEmails(); 
-                }
+                if (!activeMails.isEmpty() && !creating) { checkEmails(); }
             } catch (Exception ignored) {}
             Thread.sleep(800); 
         }
     }
 
-    // ================== RASTGELE MAIL MANTIĞI ==================
-    static void createBatch() {
-        if (creating) return;
-        creating = true;
-        currentWebIndex = 0;
-        activeMails.clear();
-        tokenMap.clear();
-        seenIds.clear();
-
-        sendTG("🎲 *10 Adet* benzersiz mail oluşturuluyor...");
-
-        Random r = new Random();
-        int count = 0;
-        while (count < BATCH_SIZE) {
-            String randomName = generateSmartUsername(r);
-            // createAccount artık String name alıyor
-            if (createAccount(randomName)) {
-                activeMails.put(count, randomName + "@" + domain);
-                count++;
-                try { Thread.sleep(400); } catch (Exception ignored) {}
-            }
-        }
-        sendTG("✅ *Mailler Hazır!* \nPanelden işleme başlayabilirsin.");
-        creating = false;
-    }
-
-    // GÜNCELLENEN METOD: Artık String alıyor
-    static boolean createAccount(String name) {
-        try {
-            String mail = name + "@" + domain;
-            JSONObject acc = new JSONObject().put("address", mail).put("password", PASSWORD);
-            RequestBody body = RequestBody.create(acc.toString(), MediaType.parse("application/json"));
-            Request req = new Request.Builder().url(API + "/accounts").post(body).build();
-            try (Response res = client.newCall(req).execute()) {
-                return res.isSuccessful() || res.code() == 422;
-            }
-        } catch (Exception e) { return false; }
-    }
-
-    static String generateSmartUsername(Random r) {
-        String[] v = {"a", "e", "i", "o", "u"};
-        String[] c = {"b", "c", "d", "f", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "y", "z"};
-        StringBuilder sb = new StringBuilder();
-        int len = r.nextInt(3) + 4; // 4-6 harf arası mantıklı kelime
-        for (int i = 0; i < len; i++) {
-            sb.append(i % 2 == 0 ? c[r.nextInt(c.length)] : v[r.nextInt(v.length)]);
-        }
-        sb.append(r.nextInt(900) + 100); // Sonuna 3 haneli sayı
-        return sb.toString();
-    }
-
-    // ================== SAF KOD BİLDİRİMİ (SADECE RAKAM) ==================
-    static void checkEmails() {
-        activeMails.values().forEach(email -> {
-            try {
-                String token = getToken(email);
-                if (token == null) return;
-                Request req = new Request.Builder().url(API + "/messages").addHeader("Authorization", "Bearer " + token).build();
-                try (Response res = client.newCall(req).execute()) {
-                    JSONArray msgs = new JSONObject(res.body().string()).getJSONArray("hydra:member");
-                    for (int i = 0; i < msgs.length(); i++) {
-                        JSONObject m = msgs.getJSONObject(i);
-                        if (seenIds.add(m.getString("id"))) {
-                            String intro = m.optString("intro", "");
-                            // SADECE RAKAMLARI AL
-                            String onlyCode = intro.replaceAll("[^0-9]", "").trim();
-                            if (!onlyCode.isEmpty()) {
-                                sendTG("`" + onlyCode + "`");
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ignored) {}
-        });
-    }
-
-    // ================== WEB PANEL VE DİĞERLERİ ==================
+    // ================== SAYAÇLI WEB PANEL ==================
     static void startWebServer() throws Exception {
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
         HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
         server.createContext("/", (exchange) -> {
             List<String> mails = new ArrayList<>(activeMails.values());
             String response;
+            
             String h = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><style>" +
                     "body{background:#121212;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;margin:0;}" +
-                    ".card{background:#1e1e1e;padding:30px;border-radius:15px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);width:320px;}" +
+                    ".card{background:#1e1e1e;padding:30px;border-radius:15px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);width:320px;border:1px solid #333;}" +
+                    ".counter{font-size:14px;color:#888;margin-bottom:10px;font-weight:bold;letter-spacing:1px;}" + // Sayaç Stili
                     ".btn-site{background:#007bff;color:white;border:none;padding:12px;width:100%;font-size:16px;font-weight:bold;border-radius:8px;cursor:pointer;margin-bottom:20px;}" +
                     "input{background:#2c2c2c;color:#00ff88;border:2px solid #444;padding:12px;width:100%;font-size:18px;border-radius:8px;text-align:center;margin-bottom:15px;outline:none;box-sizing:border-box;}" +
                     ".btn-mail{background:#00ff88;color:#121212;border:none;padding:14px;width:100%;font-size:18px;font-weight:bold;border-radius:8px;cursor:pointer;}" +
@@ -139,13 +61,16 @@ public class Main {
                     "</style></head><body>";
 
             if (mails.isEmpty() || currentWebIndex >= mails.size()) {
-                response = h + "<div class='card'><button class='btn-site' onclick='cs()'>SİTEYİ KOPYALA</button><hr><h3>Mail Yok</h3></div>";
+                response = h + "<div class='card'><button class='btn-site' onclick='cs()'>SİTEYİ KOPYALA</button><hr><h3>BİTTİ</h3><p style='color:#666'>Telegram'dan /new yazın.</p></div>";
             } else {
-                response = h + "<div class='card'><button class='btn-site' onclick='cs()'>1. SİTEYİ KOPYALA</button><hr>" +
+                int displayNum = currentWebIndex + 1;
+                response = h + "<div class='card'>" +
+                        "<div class='counter'>" + displayNum + " / " + BATCH_SIZE + "</div>" + // SAYAÇ BURADA
+                        "<button class='btn-site' onclick='cs()'>1. SİTEYİ KOPYALA</button><hr>" +
                         "<input type='text' id='m' value='" + mails.get(currentWebIndex) + "' readonly>" +
                         "<button class='btn-mail' id='bm' onclick='c()' disabled>2. KOPYALA & SONRAKİ</button></div>";
             }
-            response += "<script>function cs(){navigator.clipboard.writeText('" + TARGET_URL + "').then(()=>{document.getElementById('bm').disabled=false;});}" +
+            response += "<script>function cs(){navigator.clipboard.writeText('" + TARGET_URL + "').then(()=>{document.getElementById('bm').disabled=false;document.getElementById('bm').style.opacity='1';});}" +
                         "function c(){var x=document.getElementById('m');navigator.clipboard.writeText(x.value).then(()=>{window.location.href='/next';});}</script></body></html>";
 
             byte[] b = response.getBytes("UTF-8");
@@ -157,23 +82,66 @@ public class Main {
         server.start();
     }
 
-    static void pollTelegram() {
+    // ================== DİĞER FONKSİYONLAR (AYNI) ==================
+    static void createBatch() {
+        if (creating) return;
+        creating = true;
+        currentWebIndex = 0;
+        activeMails.clear();
+        tokenMap.clear();
+        seenIds.clear();
+        sendTG("🎲 *10 Adet* rastgele mail oluşturuluyor...");
+        Random r = new Random();
+        int count = 0;
+        while (count < BATCH_SIZE) {
+            String randomName = generateSmartUsername(r);
+            if (createAccount(randomName)) {
+                activeMails.put(count, randomName + "@" + domain);
+                count++;
+                try { Thread.sleep(300); } catch (Exception ignored) {}
+            }
+        }
+        sendTG("✅ *Mailler Hazır!*");
+        creating = false;
+    }
+
+    static boolean createAccount(String name) {
         try {
-            Request req = new Request.Builder().url("https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=1").build();
-            try (Response res = client.newCall(req).execute()) {
-                JSONObject json = new JSONObject(res.body().string());
-                JSONArray result = json.getJSONArray("result");
-                for (int i = 0; i < result.length(); i++) {
-                    JSONObject u = result.getJSONObject(i);
-                    lastUpdateId = u.getLong("update_id");
-                    if (u.has("message")) {
-                        String txt = u.getJSONObject("message").optString("text", "");
-                        if (txt.equals("/new")) new Thread(() -> createBatch()).start();
-                        if (txt.equals("/list")) sendTG(listMails());
+            String mail = name + "@" + domain;
+            RequestBody body = RequestBody.create(new JSONObject().put("address", mail).put("password", PASSWORD).toString(), MediaType.parse("application/json"));
+            try (Response res = client.newCall(new Request.Builder().url(API + "/accounts").post(body).build()).execute()) {
+                return res.isSuccessful() || res.code() == 422;
+            }
+        } catch (Exception e) { return false; }
+    }
+
+    static String generateSmartUsername(Random r) {
+        String[] v = {"a", "e", "i", "o", "u"}, c = {"b", "c", "d", "f", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "y", "z"};
+        StringBuilder sb = new StringBuilder();
+        int len = r.nextInt(3) + 4;
+        for (int i = 0; i < len; i++) sb.append(i % 2 == 0 ? c[r.nextInt(c.length)] : v[r.nextInt(v.length)]);
+        sb.append(r.nextInt(90) + 10);
+        return sb.toString();
+    }
+
+    static void checkEmails() {
+        activeMails.values().forEach(email -> {
+            try {
+                String token = getToken(email);
+                if (token == null) return;
+                Request req = new Request.Builder().url(API + "/messages").addHeader("Authorization", "Bearer " + token).build();
+                try (Response res = client.newCall(req).execute()) {
+                    JSONArray msgs = new JSONObject(res.body().string()).getJSONArray("hydra:member");
+                    for (int i = 0; i < msgs.length(); i++) {
+                        JSONObject m = msgs.getJSONObject(i);
+                        if (seenIds.add(m.getString("id"))) {
+                            String onlyCode = m.optString("intro", "").replaceAll("[^0-9]", "").trim();
+                            if (!onlyCode.isEmpty()) sendTG("`" + onlyCode + "`");
+                        }
                     }
                 }
-            }
-        } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+        });
     }
 
     static String getToken(String email) {
@@ -200,10 +168,21 @@ public class Main {
         }
     }
 
-    static String listMails() {
-        if (activeMails.isEmpty()) return "Boş.";
-        StringBuilder sb = new StringBuilder("📋 Liste:\n");
-        activeMails.values().forEach(m -> sb.append("`").append(m).append("`\n"));
-        return sb.toString();
+    static void pollTelegram() {
+        try {
+            Request req = new Request.Builder().url("https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=1").build();
+            try (Response res = client.newCall(req).execute()) {
+                JSONObject json = new JSONObject(res.body().string());
+                JSONArray result = json.getJSONArray("result");
+                for (int i = 0; i < result.length(); i++) {
+                    JSONObject u = result.getJSONObject(i);
+                    lastUpdateId = u.getLong("update_id");
+                    if (u.has("message")) {
+                        String txt = u.getJSONObject("message").optString("text", "");
+                        if (txt.equals("/new")) new Thread(() -> createBatch()).start();
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
     }
 }
