@@ -1,25 +1,22 @@
 package bot.mailtmtelegram;
 import okhttp3.*;
 import org.json.*;
-
 import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class Main {
-
     // ================== CONFIG ==================
-	static final String BOT_TOKEN = System.getenv("BOT_TOKEN");
-	static final long CHAT_ID = Long.parseLong(System.getenv("CHAT_ID"));
-
+    static final String BOT_TOKEN = System.getenv("BOT_TOKEN");
+    static final long CHAT_ID = Long.parseLong(System.getenv("CHAT_ID"));
     static final String API = "https://api.mail.tm";
     static final String PASSWORD = "123456";
-    static final int BATCH_SIZE = 5;
+    static final int BATCH_SIZE = 10;
     static final String PREFIX = "xqhlvrna";
 
     // ================== STATE ==================
-    static final Map<Integer, String> activeMails = new LinkedHashMap<>();
-    static final Map<String, String> tokenMap = new HashMap<>(); // Hız için tokenları saklıyoruz
-    static final Set<String> seenMessageIds = new HashSet<>(); // Aynı kodu tekrar atmaması için
+    static final Map<Integer, String> activeMails = new ConcurrentHashMap<>();
+    static final Map<String, String> tokenMap = new ConcurrentHashMap<>();
+    static final Set<String> seenIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
     
     static int batchStart = 1;
     static boolean creating = false;
@@ -28,32 +25,32 @@ public class Main {
 
     static final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(5, TimeUnit.SECONDS)
+            .connectionPool(new ConnectionPool(15, 5, TimeUnit.MINUTES)) // Hızlı bağlantı havuzu
             .build();
 
     public static void main(String[] args) throws Exception {
+        if (BOT_TOKEN == null || System.getenv("CHAT_ID") == null) return;
         domain = fetchDomain();
-        sendTG("🤖 Bot Jet Modunda Hazır\nDomain: " + domain);
+        sendTG("🚀 Bot Jet Modunda Başladı\nDomain: " + domain);
 
         while (true) {
             try {
                 pollTelegram();
                 if (!activeMails.isEmpty()) {
-                    checkAllInboxes();
+                    checkEmailsFast(); // Paralel kontrol
                 }
-            } catch (Exception e) {
-                System.out.println("Hata: " + e.getMessage());
-            }
-            Thread.sleep(2000); // 2 saniyede bir hem komut hem mail kontrolü
+            } catch (Exception ignored) {}
+            Thread.sleep(500); // Yarım saniyede bir kontrol (Maks hız)
         }
     }
 
-    // ================== CORE LOGIC (MAIL KONTROL) ==================
-    static void checkAllInboxes() {
-        for (String email : activeMails.values()) {
+    // ================== MAKS HIZLI KONTROL ==================
+    static void checkEmailsFast() {
+        // Parallel stream kullanarak tüm mailleri aynı anda sorgular
+        activeMails.values().parallelStream().forEach(email -> {
             try {
                 String token = getToken(email);
-                if (token == null) continue;
+                if (token == null) return;
 
                 Request req = new Request.Builder()
                         .url(API + "/messages")
@@ -66,57 +63,53 @@ public class Main {
 
                     for (int i = 0; i < messages.length(); i++) {
                         JSONObject m = messages.getJSONObject(i);
-                        String msgId = m.getString("id");
+                        String id = m.getString("id");
 
-                        if (!seenMessageIds.contains(msgId)) {
-                            String content = m.getString("intro"); // Mailin özeti (genelde kod buradadır)
-                            String from = m.getJSONObject("from").getString("address");
-                            
-                            sendTG("📩 *YENİ KOD GELDİ!*\n📧 Alıcı: " + email + "\n👤 Gönderen: " + from + "\n📝 İçerik: " + content);
-                            seenMessageIds.add(msgId);
+                        if (seenIds.add(id)) {
+                            // 2. Satırı çekme mantığı
+                            String intro = m.optString("intro", "");
+                            String[] lines = intro.split("\n");
+                            String code = (lines.length >= 2) ? lines[1].trim() : intro;
+
+                            sendTG("🔑 *YENİ KOD*\n📧: " + email + "\n🔢: `" + code + "`");
                         }
                     }
                 }
             } catch (Exception ignored) {}
-        }
+        });
     }
 
     static String getToken(String email) {
-        if (tokenMap.containsKey(email)) return tokenMap.get(email);
-
-        try {
-            JSONObject loginJson = new JSONObject().put("address", email).put("password", PASSWORD);
-            RequestBody body = RequestBody.create(loginJson.toString(), MediaType.parse("application/json"));
-            Request req = new Request.Builder().url(API + "/token").post(body).build();
-
-            try (Response res = client.newCall(req).execute()) {
-                if (res.isSuccessful()) {
-                    String token = new JSONObject(res.body().string()).getString("token");
-                    tokenMap.put(email, token);
-                    return token;
+        return tokenMap.computeIfAbsent(email, k -> {
+            try {
+                RequestBody body = RequestBody.create(
+                        new JSONObject().put("address", email).put("password", PASSWORD).toString(),
+                        MediaType.get("application/json"));
+                Request req = new Request.Builder().url(API + "/token").post(body).build();
+                try (Response res = client.newCall(req).execute()) {
+                    return new JSONObject(res.body().string()).getString("token");
                 }
-            }
-        } catch (Exception ignored) {}
-        return null;
+            } catch (Exception e) { return null; }
+        });
     }
 
-    // ================== TELEGRAM & API UTILS ==================
+    // ================== TELEGRAM & BATCH (STABİL) ==================
     static void pollTelegram() throws Exception {
         Request req = new Request.Builder()
-                .url("https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=1")
+                .url("https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=0")
                 .build();
 
         try (Response res = client.newCall(req).execute()) {
             JSONObject json = new JSONObject(res.body().string());
+            if (!json.getBoolean("ok")) return;
             for (Object o : json.getJSONArray("result")) {
                 JSONObject u = (JSONObject) o;
                 lastUpdateId = u.getLong("update_id");
-                if (!u.has("message")) continue;
-                String text = u.getJSONObject("message").optString("text", "");
-
-                if (text.equals("/new")) createBatch();
-                if (text.equals("/list")) sendTG(listMails());
-                if (text.equals("/status")) sendTG(status());
+                if (u.has("message")) {
+                    String text = u.getJSONObject("message").optString("text", "");
+                    if (text.equals("/new")) createBatch();
+                    if (text.equals("/list")) sendTG(listMails());
+                }
             }
         }
     }
@@ -125,16 +118,13 @@ public class Main {
         try {
             RequestBody body = RequestBody.create(
                     new JSONObject().put("chat_id", CHAT_ID).put("text", text).put("parse_mode", "Markdown").toString(),
-                    MediaType.parse("application/json")
-            );
-            Request req = new Request.Builder().url("https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage").post(body).build();
-            client.newCall(req).execute().close();
+                    MediaType.get("application/json"));
+            client.newCall(new Request.Builder().url("https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage").post(body).build()).execute().close();
         } catch (Exception ignored) {}
     }
 
     static String fetchDomain() throws Exception {
-        Request req = new Request.Builder().url(API + "/domains").build();
-        try (Response res = client.newCall(req).execute()) {
+        try (Response res = client.newCall(new Request.Builder().url(API + "/domains").build()).execute()) {
             return new JSONObject(res.body().string()).getJSONArray("hydra:member").getJSONObject(0).getString("domain");
         }
     }
@@ -143,12 +133,11 @@ public class Main {
         if (creating) return;
         creating = true;
         activeMails.clear();
-        tokenMap.clear(); // Yeni batch'te tokenları sıfırla
-        
+        tokenMap.clear();
+        seenIds.clear();
+
         int created = 0;
         int i = batchStart;
-        sendTG("⏳ " + BATCH_SIZE + " adet mail oluşturuluyor...");
-
         while (created < BATCH_SIZE) {
             if (createAccount(i)) {
                 activeMails.put(i, PREFIX + i + "@" + domain);
@@ -157,32 +146,28 @@ public class Main {
             i++;
         }
         batchStart = i;
-        sendTG("✅ Mailler hazır. Dinleme başladı!");
+        sendTG("✅ " + BATCH_SIZE + " Mail Aktif. Dinleniyor...");
         creating = false;
     }
 
     static boolean createAccount(int n) {
-        String mail = PREFIX + n + "@" + domain;
         try {
+            String mail = PREFIX + n + "@" + domain;
             RequestBody body = RequestBody.create(
                     new JSONObject().put("address", mail).put("password", PASSWORD).toString(),
-                    MediaType.parse("application/json")
-            );
-            Request req = new Request.Builder().url(API + "/accounts").post(body).build();
-            try (Response res = client.newCall(req).execute()) {
+                    MediaType.get("application/json"));
+            try (Response res = client.newCall(new Request.Builder().url(API + "/accounts").post(body).build()).execute()) {
                 return res.isSuccessful();
             }
         } catch (Exception e) { return false; }
     }
 
     static String listMails() {
-        if (activeMails.isEmpty()) return "📭 Aktif mail yok";
-        StringBuilder sb = new StringBuilder("📋 *AKTİF MAİLLER*\n\n");
-        for (String m : activeMails.values()) sb.append("`").append(m).append("`\n");
+        if (activeMails.isEmpty()) return "📭 Boş";
+        StringBuilder sb = new StringBuilder("📋 *LİSTE*\n");
+        activeMails.values().forEach(m -> sb.append("`").append(m).append("`\n"));
         return sb.toString();
     }
 
-    static String status() {
-        return "📊 *DURUM*\nAktif inbox: " + activeMails.size() + "\nDomain: " + domain;
-    }
+    static String status() { return "📊 Aktif: " + activeMails.size(); }
 }
