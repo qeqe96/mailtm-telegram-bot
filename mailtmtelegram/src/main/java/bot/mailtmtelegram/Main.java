@@ -23,13 +23,16 @@ public class Main {
     static volatile boolean creating = false;
     static String domain = "";
     static long lastUpdateId = 0;
-
     static final OkHttpClient client = new OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build();
 
     public static void main(String[] args) throws Exception {
         domain = fetchDomain();
         startWebServer();
-        sendTG("🚀 *Sistem Hazır!* \nSayaç ve kilitli mod aktif.");
+        
+        // MOTİVASYON ZAMANLAYICISI BAŞLAT
+        startMotivationScheduler();
+
+        sendTG("🚀 *Sistem Yenilendi!* \nSayaç, Kilitli Panel ve Motivasyon Botu Aktif.");
 
         while (true) {
             try {
@@ -40,7 +43,21 @@ public class Main {
         }
     }
 
-    // ================== SAYAÇLI WEB PANEL ==================
+    // ================== MOTİVASYON SİSTEMİ ==================
+    static void startMotivationScheduler() {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        Random r = new Random();
+
+        // Günde 3 kez rastgele zamanlarda mesaj atar
+        for (int i = 0; i < 3; i++) {
+            int randomDelayMinutes = r.nextInt(1440); // 0-24 saat arası rastgele başla
+            scheduler.scheduleAtFixedRate(() -> {
+                sendTG("💰 *Hadi biraz hesap açalım, paraya ihtiyacımız var!*");
+            }, randomDelayMinutes, 1440, TimeUnit.MINUTES);
+        }
+    }
+
+    // ================== WEB PANEL (SAYAÇLI & KİLİTLİ) ==================
     static void startWebServer() throws Exception {
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
         HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
@@ -51,26 +68,31 @@ public class Main {
             String h = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><style>" +
                     "body{background:#121212;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;margin:0;}" +
                     ".card{background:#1e1e1e;padding:30px;border-radius:15px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);width:320px;border:1px solid #333;}" +
-                    ".counter{font-size:14px;color:#888;margin-bottom:10px;font-weight:bold;letter-spacing:1px;}" + // Sayaç Stili
+                    ".counter-badge{background:#333;color:#00ff88;padding:5px 15px;border-radius:20px;display:inline-block;margin-bottom:20px;font-weight:bold;font-size:18px;border:1px solid #444;}" +
                     ".btn-site{background:#007bff;color:white;border:none;padding:12px;width:100%;font-size:16px;font-weight:bold;border-radius:8px;cursor:pointer;margin-bottom:20px;}" +
                     "input{background:#2c2c2c;color:#00ff88;border:2px solid #444;padding:12px;width:100%;font-size:18px;border-radius:8px;text-align:center;margin-bottom:15px;outline:none;box-sizing:border-box;}" +
-                    ".btn-mail{background:#00ff88;color:#121212;border:none;padding:14px;width:100%;font-size:18px;font-weight:bold;border-radius:8px;cursor:pointer;}" +
+                    ".btn-mail{background:#00ff88;color:#121212;border:none;padding:14px;width:100%;font-size:18px;font-weight:bold;border-radius:8px;cursor:pointer;width:100%;}" +
                     ".btn-mail:disabled{background:#444;color:#888;cursor:not-allowed;opacity:0.5;}" +
                     "hr{border:0;border-top:1px solid #333;margin:15px 0;}" +
                     "</style></head><body>";
 
             if (mails.isEmpty() || currentWebIndex >= mails.size()) {
-                response = h + "<div class='card'><button class='btn-site' onclick='cs()'>SİTEYİ KOPYALA</button><hr><h3>BİTTİ</h3><p style='color:#666'>Telegram'dan /new yazın.</p></div>";
+                response = h + "<div class='card'><h3>BİTTİ</h3><p style='color:#666'>Telegram'dan /new yazın.</p></div>";
             } else {
                 int displayNum = currentWebIndex + 1;
                 response = h + "<div class='card'>" +
-                        "<div class='counter'>" + displayNum + " / " + BATCH_SIZE + "</div>" + // SAYAÇ BURADA
-                        "<button class='btn-site' onclick='cs()'>SİTEYİ KOPYALA</button><hr>" +
+                        "<div class='counter-badge'>" + displayNum + " / " + BATCH_SIZE + "</div>" +
+                        "<button class='btn-site' onclick='cs()'>1. SİTEYİ KOPYALA</button><hr>" +
                         "<input type='text' id='m' value='" + mails.get(currentWebIndex) + "' readonly>" +
-                        "<button class='btn-mail' id='bm' onclick='c()' disabled>KOPYALA</button></div>";
+                        "<button class='btn-mail' id='bm' onclick='c()' disabled>2. KOPYALA & SONRAKİ</button></div>";
             }
-            response += "<script>function cs(){navigator.clipboard.writeText('" + TARGET_URL + "').then(()=>{document.getElementById('bm').disabled=false;document.getElementById('bm').style.opacity='1';});}" +
-                        "function c(){var x=document.getElementById('m');navigator.clipboard.writeText(x.value).then(()=>{window.location.href='/next';});}</script></body></html>";
+            response += "<script>" +
+                        "function cs(){navigator.clipboard.writeText('" + TARGET_URL + "').then(()=>{ " +
+                        "document.getElementById('bm').disabled=false; " +
+                        "document.getElementById('bm').innerText='2. ŞİMDİ MAİLİ KOPYALA';" +
+                        "});}" +
+                        "function c(){var x=document.getElementById('m');navigator.clipboard.writeText(x.value).then(()=>{window.location.href='/next';});}" +
+                        "</script></body></html>";
 
             byte[] b = response.getBytes("UTF-8");
             exchange.sendResponseHeaders(200, b.length);
@@ -81,7 +103,7 @@ public class Main {
         server.start();
     }
 
-    // ================== DİĞER FONKSİYONLAR (AYNI) ==================
+    // ================== MAIL MANTIĞI ==================
     static void createBatch() {
         if (creating) return;
         creating = true;
@@ -89,7 +111,7 @@ public class Main {
         activeMails.clear();
         tokenMap.clear();
         seenIds.clear();
-        sendTG("🎲 *10 Adet* rastgele mail oluşturuluyor...");
+        sendTG("🎲 *Rastgele mailler oluşturuluyor...*");
         Random r = new Random();
         int count = 0;
         while (count < BATCH_SIZE) {
@@ -100,7 +122,7 @@ public class Main {
                 try { Thread.sleep(300); } catch (Exception ignored) {}
             }
         }
-        sendTG("✅ *Mailler Hazır!*");
+        sendTG("✅ *10 Mail Hazır!*");
         creating = false;
     }
 
@@ -134,6 +156,7 @@ public class Main {
                     for (int i = 0; i < msgs.length(); i++) {
                         JSONObject m = msgs.getJSONObject(i);
                         if (seenIds.add(m.getString("id"))) {
+                            // SADECE SAF KOD (RAKAMLAR)
                             String onlyCode = m.optString("intro", "").replaceAll("[^0-9]", "").trim();
                             if (!onlyCode.isEmpty()) sendTG("`" + onlyCode + "`");
                         }
